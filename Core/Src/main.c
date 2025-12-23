@@ -112,6 +112,8 @@ int main(void)
   float dt = 0.01; // 루프 주기 (초 단위)
 
   printf("System Init Done!\r\n");
+  // 오프셋 설정
+  float Angle_Offset = -0.55f;
 
   // 1. 센서 ID 확인 및 깨우기
   HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100);
@@ -161,9 +163,12 @@ int main(void)
 	// 자이로의 빠릿함 + 가속도의 안정성
 	Final_Angle_X = 0.96f * (Final_Angle_X + Gyro_Rate * dt) + 0.04f * Acc_Angle;
 
+	// 영점 보정 적용
+	// (현재 각도) - (기울어진 오차) = 0
+	float Calibrated_Angle = Final_Angle_X - Angle_Offset;
+
 	// 5. 결과 출력
-	// Raw 값은 지우고, 깔끔하게 각도만 출력
-	printf("Angle: %.2f\r\n", Final_Angle_X);
+	printf("Angle: %.2f\r\n", Calibrated_Angle);
 
 	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 동작 확인용 LED
 
