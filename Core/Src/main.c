@@ -26,6 +26,8 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#define MPU6050_ADDR 0xD0 // (0x68 << 1) : 7비트 주소를 8비트로 변환
+#define WHO_AM_I_REG 0x75
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -97,9 +99,30 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   char msg[50];
-  float dummy_angle = 0.0;
+  // MPU6050 확인용 변수
+  uint8_t check_val = 0;
+  uint8_t i2c_status = 0;
 
   printf("System Init Done!\r\n"); // 초기화 완료 메시지
+
+  // MPU6050 연결 확인(Who Am I)
+  // 1. 레지스터 주소 0x75에 읽어오기 신호 보냄
+  // HAL_I2C_Mem_Read(핸들러, 디바이스 주소, 레지스터 주소, 주소크기, 저장할 버퍼, 데이터 길이, 타임아웃)
+  if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100) == HAL_OK)
+  {
+	  if (check_val == 0x68 || check_val == 0x70)
+	  {
+		  printf("MPU-6050 Connected! (ID: 0x%02X)\r\n", check_val);
+	  }
+	  else
+	  {
+		  printf("Device found, but unknown ID: 0x%02X\r\n", check_val);
+	  }
+  }
+  else
+  {
+	  printf("Error: MPU-6050 not found! Check wiring.\r\n");
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -109,24 +132,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  // 1. 가상의 각도 데이터 생성
-	  dummy_angle += 0.5;
-	  if(dummy_angle > 90.0) dummy_angle = -90.0;
 
-	  // 2. 문자열 포맷팅
-	  // 주의: STM32CubeIDE 프로젝트 속성에서 Float printf 기능이 켜져 있어야 %.2f가 동작함.
-	  sprintf(msg, "Current Angle: %.2f\r\n", dummy_angle);
-
-	  // 3. UART로 전송 (Timeout 10ms)
-	  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 10);
-
-	  // 4. LED 깜빡임 및 Tick 확인
+	  // LED 깜빡임 및 Tick 확인
 	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // LED(PA5) 깜빡임
 
 	  // printf 테스트
 	  printf("Robot Alive! Tick: %lu\r\n", HAL_GetTick()); // UART 메시지 전송
 
-	  // 5. 딜레이
+	  // 딜레이
 	  HAL_Delay(500); // 0.5초 대기
   }
   /* USER CODE END 3 */
