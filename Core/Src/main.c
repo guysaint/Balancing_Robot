@@ -98,30 +98,28 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-  char msg[50];
-  // MPU6050 확인용 변수
+  // MPU6050/6500 초기화 및 데이터 읽기 변수
   uint8_t check_val = 0;
-  uint8_t i2c_status = 0;
+  uint8_t data[14]; // 가속도(6) + 온도(2) + 자이로(6) 데이터를 한 번에 읽을 버퍼
+  int16_t Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw;
+  int16_t Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw;
 
   printf("System Init Done!\r\n"); // 초기화 완료 메시지
 
-  // MPU6050 연결 확인(Who Am I)
-  // 1. 레지스터 주소 0x75에 읽어오기 신호 보냄
+  // 1. 센서 ID 확인(0x68 또는 0x70)
   // HAL_I2C_Mem_Read(핸들러, 디바이스 주소, 레지스터 주소, 주소크기, 저장할 버퍼, 데이터 길이, 타임아웃)
-  if (HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100) == HAL_OK)
+  HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100);
+  if (check_val == 0x68 || check_val == 0x70)
   {
-	  if (check_val == 0x68 || check_val == 0x70)
-	  {
-		  printf("MPU-6050 Connected! (ID: 0x%02X)\r\n", check_val);
-	  }
-	  else
-	  {
-		  printf("Device found, but unknown ID: 0x%02X\r\n", check_val);
-	  }
+	  printf("Sensor Connected! (ID: 0x%02X)\r\n", check_val);
+	  // 2. 센서 깨우기 (Power Management 1 레지스터 0x6B에 0을 써서 Sleep 해제)
+	  uint8_t val = 0;
+	  HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &val, 1, 100);
   }
+
   else
   {
-	  printf("Error: MPU-6050 not found! Check wiring.\r\n");
+	  printf("Error: Unknown ID: 0x%02X\r\n", check_val);
   }
   /* USER CODE END 2 */
 
@@ -132,16 +130,27 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	// 3. 데이터 읽기 (레지스터 0x3B부터 14바이트를 한 번에 읽음)
+	// 순서: Accel_X(H,L), Accel_Y, Accel_Z, Temp, Gyro_X, Gyro_Y, Gyro_Z
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, data, 14, 100);
 
-	  // LED 깜빡임 및 Tick 확인
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // LED(PA5) 깜빡임
+	// 4. 데이터 합치기 (High Byte <<8 | Low Byte)
+	Acc_X_Raw = (int16_t)(data[0] << 8 | data[1]);
+	Acc_Y_Raw = (int16_t)(data[2] << 8 | data[3]);
+	Acc_Z_Raw = (int16_t)(data[4] << 8 | data[5]);
 
-	  // printf 테스트
-	  printf("Robot Alive! Tick: %lu\r\n", HAL_GetTick()); // UART 메시지 전송
+	Gyro_X_Raw = (int16_t)(data[8] << 8 | data[9]);
+	Gyro_Y_Raw = (int16_t)(data[10] << 8 | data[11]);
+	Gyro_Z_Raw = (int16_t)(data[12] << 8 | data[13]);
 
-	  // 딜레이
-	  HAL_Delay(500); // 0.5초 대기
-  }
+	// 5. 시리얼 출력 (Raw Data 확인)
+	// 센서를 손으로 기울이면서 숫자가 변하는지 확인해야 함.
+	printf("AX:%5d AY:%5d AZ:%5d | GX:%5d GY:%5d GZ:%5d\r\n", Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw, Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw);
+
+	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 동작 확인용 LED
+	HAL_Delay(100); // 0.1초마다 갱신
+	}
+
   /* USER CODE END 3 */
 }
 
