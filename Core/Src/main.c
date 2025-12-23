@@ -26,6 +26,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #define MPU6050_ADDR 0xD0 // (0x68 << 1) : 7비트 주소를 8비트로 변환
 #define WHO_AM_I_REG 0x75
 /* USER CODE END Includes */
@@ -98,21 +99,25 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-  // MPU6050/6500 초기화 및 데이터 읽기 변수
+  // 변수 선언
   uint8_t check_val = 0;
-  uint8_t data[14]; // 가속도(6) + 온도(2) + 자이로(6) 데이터를 한 번에 읽을 버퍼
+  uint8_t data[14];
   int16_t Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw;
   int16_t Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw;
 
-  printf("System Init Done!\r\n"); // 초기화 완료 메시지
+  // 각도 계산용 변수
+  float Acc_Angle_X = 0;
+  float Gyro_Rate_X = 0;
+  float Final_Angle_X = 0; // 최종 구하려는 각도(Roll)
+  float dt = 0.01; // 루프 주기 (초 단위)
 
-  // 1. 센서 ID 확인(0x68 또는 0x70)
-  // HAL_I2C_Mem_Read(핸들러, 디바이스 주소, 레지스터 주소, 주소크기, 저장할 버퍼, 데이터 길이, 타임아웃)
+  printf("System Init Done!\r\n");
+
+  // 1. 센서 ID 확인 및 깨우기
   HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100);
   if (check_val == 0x68 || check_val == 0x70)
   {
 	  printf("Sensor Connected! (ID: 0x%02X)\r\n", check_val);
-	  // 2. 센서 깨우기 (Power Management 1 레지스터 0x6B에 0을 써서 Sleep 해제)
 	  uint8_t val = 0;
 	  HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &val, 1, 100);
   }
@@ -130,16 +135,41 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	// 3. 데이터 읽기 (레지스터 0x3B부터 14바이트를 한 번에 읽음)
-	// 순서: Accel_X(H,L), Accel_Y, Accel_Z, Temp, Gyro_X, Gyro_Y, Gyro_Z
+	// 2. 센서값 읽기
 	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, data, 14, 100);
 
-	// 4. 데이터 합치기 (High Byte <<8 | Low Byte)
+	// 3. 데이터 합치기(비트 연산)
 	Acc_X_Raw = (int16_t)(data[0] << 8 | data[1]);
 	Acc_Y_Raw = (int16_t)(data[2] << 8 | data[3]);
 	Acc_Z_Raw = (int16_t)(data[4] << 8 | data[5]);
-
 	Gyro_X_Raw = (int16_t)(data[8] << 8 | data[9]);
+
+	// ------------------------------------------------------------------
+	// 4. 각도 계산(상보 필터)
+	// ------------------------------------------------------------------
+
+	// [가속도계] 삼각함수로 기울기 계산 (단위: 도)
+	// 로봇이 앞뒤로 기울어지는 축(보통 Y축 또는 X축)에 맞춰야 함.
+	// 여기서는 Y축 회전(Pitch)을 계산한다고 가정:
+	float Acc_Angle = atan2((float)Acc_Y_Raw, (float)Acc_Z_Raw) * 57.29578f;
+
+	// [자이로] 각속도를 적분 (단위: 도/초 -> 도)
+	// 131.0은 자이로 설정값(Sensitivity)에 따른 나눗셈
+	float Gyro_Rate = Gyro_X_Raw / 131.0f;
+
+	// [상보 필터] 가속도(96%)와 자이로(4%)를 섞음
+	// 자이로의 빠릿함 + 가속도의 안정성
+	Final_Angle_X = 0.96f * (Final_Angle_X + Gyro_Rate * dt) + 0.04f * Acc_Angle;
+
+	// 5. 결과 출력
+	// Raw 값은 지우고, 깔끔하게 각도만 출력
+	printf("Angle: %.2f\r\n", Final_Angle_X);
+
+	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 동작 확인용 LED
+
+
+	HAL_Delay(10);
+
 	Gyro_Y_Raw = (int16_t)(data[10] << 8 | data[11]);
 	Gyro_Z_Raw = (int16_t)(data[12] << 8 | data[13]);
 
@@ -147,8 +177,6 @@ int main(void)
 	// 센서를 손으로 기울이면서 숫자가 변하는지 확인해야 함.
 	printf("AX:%5d AY:%5d AZ:%5d | GX:%5d GY:%5d GZ:%5d\r\n", Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw, Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw);
 
-	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 동작 확인용 LED
-	HAL_Delay(100); // 0.1초마다 갱신
 	}
 
   /* USER CODE END 3 */
