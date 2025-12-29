@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -49,7 +50,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+// 엔코더 값을 저장할 변수 (0 ~ 65535)
+uint16_t enc_L = 0;
+uint16_t enc_R = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -98,91 +101,97 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_I2C1_Init();
+  MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-  // 변수 선언
-  uint8_t check_val = 0;
-  uint8_t data[14];
-  int16_t Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw;
-  int16_t Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw;
+  printf("Motor & Encoder Test Start!\r\n");
 
-  // 각도 계산용 변수
-  float Acc_Angle_X = 0;
-  float Gyro_Rate_X = 0;
-  float Final_Angle_X = 0; // 최종 구하려는 각도(Roll)
-  float dt = 0.01; // 루프 주기 (초 단위)
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1); // PWM 시작
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 
-  printf("System Init Done!\r\n");
-  // 오프셋 설정
-  float Angle_Offset = -0.55f;
+  HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL); // 엔코더 시작
+  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 
-  // 1. 센서 ID 확인 및 깨우기
-  HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, WHO_AM_I_REG, 1, &check_val, 1, 100);
-  if (check_val == 0x68 || check_val == 0x70)
-  {
-	  printf("Sensor Connected! (ID: 0x%02X)\r\n", check_val);
-	  uint8_t val = 0;
-	  HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &val, 1, 100);
-  }
-
-  else
-  {
-	  printf("Error: Unknown ID: 0x%02X\r\n", check_val);
-  }
+  __HAL_TIM_SET_COUNTER(&htim3, 30000); // 초기값 설정
+  __HAL_TIM_SET_COUNTER(&htim4, 30000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	// 2. 센서값 읽기
-	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, data, 14, 100);
+	  // --- [1단계] 앞으로 가기 (2초) ---
+	    printf("Direction: FORWARD\r\n");
 
-	// 3. 데이터 합치기(비트 연산)
-	Acc_X_Raw = (int16_t)(data[0] << 8 | data[1]);
-	Acc_Y_Raw = (int16_t)(data[2] << 8 | data[3]);
-	Acc_Z_Raw = (int16_t)(data[4] << 8 | data[5]);
-	Gyro_X_Raw = (int16_t)(data[8] << 8 | data[9]);
+	    // 왼쪽 전진 (IN1=High, IN2=Low)
+	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_SET);
+	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
+	    // 오른쪽 전진 (IN1=High, IN2=Low)
+	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_SET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
 
-	// ------------------------------------------------------------------
-	// 4. 각도 계산(상보 필터)
-	// ------------------------------------------------------------------
+	    // 속도 30% (ARR이 4999이므로 약 1500)
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1500);
 
-	// [가속도계] 삼각함수로 기울기 계산 (단위: 도)
-	// 로봇이 앞뒤로 기울어지는 축(보통 Y축 또는 X축)에 맞춰야 함.
-	// 여기서는 Y축 회전(Pitch)을 계산한다고 가정:
-	float Acc_Angle = atan2((float)Acc_Y_Raw, (float)Acc_Z_Raw) * 57.29578f;
+	    HAL_Delay(2000); // 2초 주행
 
-	// [자이로] 각속도를 적분 (단위: 도/초 -> 도)
-	// 131.0은 자이로 설정값(Sensitivity)에 따른 나눗셈
-	float Gyro_Rate = Gyro_X_Raw / 131.0f;
+	    // --- [엔코더 값 확인] ---
+	    enc_L = __HAL_TIM_GET_COUNTER(&htim3);
+	    enc_R = __HAL_TIM_GET_COUNTER(&htim4);
+	    printf("Encoder L: %d | R: %d\r\n", enc_L, enc_R);
 
-	// [상보 필터] 가속도(96%)와 자이로(4%)를 섞음
-	// 자이로의 빠릿함 + 가속도의 안정성
-	Final_Angle_X = 0.96f * (Final_Angle_X + Gyro_Rate * dt) + 0.04f * Acc_Angle;
+	    // --- [2단계] 정지 (1초) ---
+	    printf("Direction: STOP\r\n");
 
-	// 영점 보정 적용
-	// (현재 각도) - (기울어진 오차) = 0
-	float Calibrated_Angle = Final_Angle_X - Angle_Offset;
+	    // 정지 (모두 Low)
+	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
 
-	// 5. 결과 출력
-	printf("Angle: %.2f\r\n", Calibrated_Angle);
+	    // 속도 0
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
 
-	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 동작 확인용 LED
+	    HAL_Delay(1000);
 
+	    // --- [3단계] 뒤로 가기 (2초) ---
+	    printf("Direction: BACKWARD\r\n");
 
-	HAL_Delay(10);
+	    // 왼쪽 후진 (IN1=Low, IN2=High)
+	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_SET);
+	    // 오른쪽 후진 (IN1=Low, IN2=High)
+	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_SET);
 
-	Gyro_Y_Raw = (int16_t)(data[10] << 8 | data[11]);
-	Gyro_Z_Raw = (int16_t)(data[12] << 8 | data[13]);
+	    // 속도 30%
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1500);
 
-	// 5. 시리얼 출력 (Raw Data 확인)
-	// 센서를 손으로 기울이면서 숫자가 변하는지 확인해야 함.
-	printf("AX:%5d AY:%5d AZ:%5d | GX:%5d GY:%5d GZ:%5d\r\n", Acc_X_Raw, Acc_Y_Raw, Acc_Z_Raw, Gyro_X_Raw, Gyro_Y_Raw, Gyro_Z_Raw);
+	    HAL_Delay(2000);
 
-	}
+	    // --- [엔코더 값 확인] ---
+	    enc_L = __HAL_TIM_GET_COUNTER(&htim3);
+	    enc_R = __HAL_TIM_GET_COUNTER(&htim4);
+	    printf("Encoder L: %d | R: %d\r\n", enc_L, enc_R);
+
+	    // --- [4단계] 정지 (1초) ---
+	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
+	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
+	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
+
+	    HAL_Delay(1000);
+	  }
 
   /* USER CODE END 3 */
 }
@@ -209,9 +218,9 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 16;
-  RCC_OscInitStruct.PLL.PLLN = 336;
-  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 100;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
@@ -227,7 +236,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK)
   {
     Error_Handler();
   }
