@@ -59,7 +59,7 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 45.0f;   // 비례 항 (우선 이것만 사용)
+float Kp = 400.0f;   // 비례 항 (우선 이것만 사용)
 float Ki = 0.0f;    // 적분 항 (나중에)
 float Kd = 0.0f;    // 미분 항 (나중에)
 
@@ -286,8 +286,8 @@ void Motor_Control(int speed_L, int speed_R) {
 
 	// 데드존(Deadzone) 보정: 모터가 돌기 시작하는 최소 전압 (약 100~200)
 	// 값이 너무 작으면 모터가 웅~ 소리만 내고 안 돕니다.
-	if (speed_L > 0 && speed_L < 150) speed_L = 150;
-	if (speed_R > 0 && speed_R < 150) speed_R = 150;
+	if (speed_L > 0 && speed_L < 350) speed_L = 350;
+	if (speed_R > 0 && speed_R < 350) speed_R = 350;
 
 	// 최대 속도 제한
 	if (speed_L > 999) speed_L = 999;
