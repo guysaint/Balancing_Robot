@@ -59,9 +59,9 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 120.0f;   // 비례 항 - 힘
+float Kp = 380.0f;   // 비례 항 - 힘
 float Ki = 2.0f;    // 누적 오차 보정 - 적분
-float Kd = 35.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 28.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
 float Target_Angle = -2.5f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
@@ -302,8 +302,8 @@ void Motor_Control(int speed_L, int speed_R) {
 
 	// 데드존(Deadzone) 보정: 모터가 돌기 시작하는 최소 전압 (약 100~200)
 	// 값이 너무 작으면 모터가 웅~ 소리만 내고 안 돕니다.
-	if (speed_L > 0 && speed_L < 1500) speed_L = 1500;
-	if (speed_R > 0 && speed_R < 1500) speed_R = 1500;
+	if (speed_L > 0 && speed_L < 700) speed_L = 700;
+	if (speed_R > 0 && speed_R < 700) speed_R = 700;
 
 	// 최대 속도 제한
 	if (speed_L > 4700) speed_L = 4700;
