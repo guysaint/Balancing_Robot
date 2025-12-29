@@ -179,8 +179,8 @@ int main(void)
 		// 3. 모터 구동
 		// PID 출력이 양수면 앞으로(넘어지려는 쪽으로), 음수면 뒤로
 		// PWM 범위 제한 (-999 ~ 999)
-		if (PID_Output > 999) PID_Output = 999;
-		if (PID_Output < -999) PID_Output = -999;
+		if (PID_Output > 4700) PID_Output = 4700;
+		if (PID_Output < -4700) PID_Output = -4700;
 
 		// 모터 함수에 입력 (왼쪽, 오른쪽 동일하게 적용)
 		Motor_Control((int)PID_Output, (int)PID_Output);
@@ -286,12 +286,12 @@ void Motor_Control(int speed_L, int speed_R) {
 
 	// 데드존(Deadzone) 보정: 모터가 돌기 시작하는 최소 전압 (약 100~200)
 	// 값이 너무 작으면 모터가 웅~ 소리만 내고 안 돕니다.
-	if (speed_L > 0 && speed_L < 350) speed_L = 350;
-	if (speed_R > 0 && speed_R < 350) speed_R = 350;
+	if (speed_L > 0 && speed_L < 1500) speed_L = 1500;
+	if (speed_R > 0 && speed_R < 1500) speed_R = 1500;
 
 	// 최대 속도 제한
-	if (speed_L > 999) speed_L = 999;
-	if (speed_R > 999) speed_R = 999;
+	if (speed_L > 4700) speed_L = 4700;
+	if (speed_R > 4700) speed_R = 4700;
 
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, speed_L);
 	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, speed_R);
