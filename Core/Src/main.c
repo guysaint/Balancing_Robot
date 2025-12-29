@@ -59,9 +59,9 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 400.0f;   // 비례 항 (우선 이것만 사용)
-float Ki = 0.0f;    // 적분 항 (나중에)
-float Kd = 0.0f;    // 미분 항 (나중에)
+float Kp = 420.0f;   // 비례 항 - 힘
+float Ki = 1.5f;    // 누적 오차 보정 - 적분
+float Kd = 8.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
 float Target_Angle = -0.55f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
@@ -154,39 +154,48 @@ int main(void)
 	{
 	  current_time = HAL_GetTick();
 
-	  // --- [10ms 주기 제어 루프 (100Hz)] ---
-	  if (current_time - prev_time >= 10)
+	  if (current_time - prev_time >= 10) // 10ms 주기 (100Hz)
 	  {
 		prev_time = current_time;
 
-		// 1. 센서 값 읽기 및 각도 계산 (상보필터)
+		// 1. 센서 값 읽기
 		Read_MPU6050();
 
-		// 2. PID 계산
-		Error = Target_Angle - Current_Angle; // 목표 - 현재
+		// ★ [안전장치 추가] 40도 이상 기울어지면 모터 끄기!
+		if (Current_Angle > 40.0f || Current_Angle < -40.0f)
+		{
+			Motor_Control(0, 0); // 모터 정지
 
-		P_Term = Kp * Error;
-		I_Term += Ki * Error * Loop_Time;
-		D_Term = Kd * (Error - Prev_Error) / Loop_Time;
+			// 넘어져 있을 때는 적분항(I)이 계속 쌓여서 폭발하는 것을 방지하기 위해 초기화
+			Error = 0;
+			Prev_Error = 0;
+			I_Term = 0;
+			PID_Output = 0;
+		}
+		else // 정상 범위(서 있을 때)에만 PID 작동
+		{
+			// 2. PID 계산
+			Error = Target_Angle - Current_Angle;
 
-		// I항 누적 제한 (Windup 방지 - 필요 시 활성화)
-		// if(I_Term > 500) I_Term = 500; if(I_Term < -500) I_Term = -500;
+			P_Term = Kp * Error;
+			I_Term += Ki * Error * Loop_Time;
+			D_Term = Kd * (Error - Prev_Error) / Loop_Time;
 
-		Prev_Error = Error;
+			// I항 누적 제한 (안전용)
+			if(I_Term > 2000) I_Term = 2000;
+			if(I_Term < -2000) I_Term = -2000;
 
-		PID_Output = -(P_Term + I_Term + D_Term); // 최종 모터 출력값
+			Prev_Error = Error;
 
-		// 3. 모터 구동
-		// PID 출력이 양수면 앞으로(넘어지려는 쪽으로), 음수면 뒤로
-		// PWM 범위 제한 (-999 ~ 999)
-		if (PID_Output > 4700) PID_Output = 4700;
-		if (PID_Output < -4700) PID_Output = -4700;
+			// 출력 계산 (부호 확인: 아까 반대로 바꾼 것 유지)
+			PID_Output = -(P_Term + I_Term + D_Term);
 
-		// 모터 함수에 입력 (왼쪽, 오른쪽 동일하게 적용)
-		Motor_Control((int)PID_Output, (int)PID_Output);
+			// 3. 모터 제한 및 구동 (풀 파워 해제 버전)
+			if (PID_Output > 4700) PID_Output = 4700;
+			if (PID_Output < -4700) PID_Output = -4700;
 
-		// 4. 디버깅 (필요할 때만 주석 해제 - 너무 빠르면 렉 걸림)
-		// printf("Angle: %.2f | PWM: %d\r\n", Current_Angle, (int)PID_Output);
+			Motor_Control((int)PID_Output, (int)PID_Output);
+		}
 	  }
 	}
   /* USER CODE END 3 */
