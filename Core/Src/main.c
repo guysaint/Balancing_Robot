@@ -51,19 +51,19 @@
 /* USER CODE BEGIN PV */
 // --- [1. MPU6050 관련 변수] ---
 uint8_t MPU6050_ADDR = 0xD0; // (0x68 << 1) or (0x70 << 1) 확인 필요
-int16_t Acc_Y_Raw, Acc_Z_Raw;
-int16_t Gyro_X_Raw;
+int16_t Acc_X_Raw, Acc_Z_Raw;
+int16_t Gyro_Y_Raw;
 float Acc_Angle, Gyro_Rate;
 float Current_Angle = 0.0f;
 float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 420.0f;   // 비례 항 - 힘
+float Kp = 120.0f;   // 비례 항 - 힘
 float Ki = 2.0f;    // 누적 오차 보정 - 적분
-float Kd = 20.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 35.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
-float Target_Angle = -0.28f; // 수직일 때 센서 오차값 (캘리브레이션 값)
+float Target_Angle = -2.5f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
 float P_Term, I_Term, D_Term;
 float PID_Output;
@@ -188,7 +188,7 @@ int main(void)
 			Prev_Error = Error;
 
 			// 출력 계산 (부호 확인: 아까 반대로 바꾼 것 유지)
-			PID_Output = -(P_Term + I_Term + D_Term);
+			PID_Output = P_Term + I_Term + D_Term;
 
 			// 3. 모터 제한 및 구동 (풀 파워 해제 버전)
 			if (PID_Output > 4700) PID_Output = 4700;
@@ -259,21 +259,21 @@ void SystemClock_Config(void)
 void Read_MPU6050(void) {
 	uint8_t buffer[6]; // 데이터 읽기용 버퍼
 
-	// 가속도 읽기 (0x3D: ACCEL_YOUT_H 부터 Z까지) - Y, Z축 사용
-	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3D, 1, buffer, 4, 100);
-	Acc_Y_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
-	Acc_Z_Raw = (int16_t)(buffer[2] << 8 | buffer[3]);
+	// 가속도 읽기 (0x3B: ACCEL_YOUT_H 부터 Z까지) - X, Z축 사용
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3B, 1, buffer, 6, 100);
+	Acc_X_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
+	Acc_Z_Raw = (int16_t)(buffer[4] << 8 | buffer[5]);
 
-	// 자이로 읽기 (0x43: GYRO_XOUT_H) - X축 회전 사용
-	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x43, 1, buffer, 2, 100);
-	Gyro_X_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
+	// 자이로 읽기 (0x45: GYRO_XOUT_H) - Y축 회전 사용
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x45, 1, buffer, 2, 100);
+	Gyro_Y_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
 
 	// 각도 계산 (상보필터)
 	// 1. 가속도 각도 (atan2)
-	Acc_Angle = atan2f((float)Acc_Y_Raw, (float)Acc_Z_Raw) * 57.296f;
+	Acc_Angle = atan2f((float)Acc_X_Raw, (float)Acc_Z_Raw) * 57.296f;
 
 	// 2. 자이로 각속도
-	Gyro_Rate = Gyro_X_Raw / 131.0f;
+	Gyro_Rate = Gyro_Y_Raw / 131.0f;
 
 	// 3. 상보필터 적용 (0.96 : 0.04)
 	Current_Angle = 0.96f * (Current_Angle + Gyro_Rate * Loop_Time) + 0.04f * Acc_Angle;
