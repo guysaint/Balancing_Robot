@@ -174,7 +174,7 @@ int main(void)
 
 		Prev_Error = Error;
 
-		PID_Output = P_Term + I_Term + D_Term; // 최종 모터 출력값
+		PID_Output = -(P_Term + I_Term + D_Term); // 최종 모터 출력값
 
 		// 3. 모터 구동
 		// PID 출력이 양수면 앞으로(넘어지려는 쪽으로), 음수면 뒤로
