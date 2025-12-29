@@ -28,7 +28,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#define MPU6050_ADDR 0xD0 // (0x68 << 1) : 7비트 주소를 8비트로 변환
 #define WHO_AM_I_REG 0x75
 /* USER CODE END Includes */
 
@@ -50,15 +49,34 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-// 엔코더 값을 저장할 변수 (0 ~ 65535)
-uint16_t enc_L = 0;
-uint16_t enc_R = 0;
+// --- [1. MPU6050 관련 변수] ---
+uint8_t MPU6050_ADDR = 0xD0; // (0x68 << 1) or (0x70 << 1) 확인 필요
+int16_t Acc_Y_Raw, Acc_Z_Raw;
+int16_t Gyro_X_Raw;
+float Acc_Angle, Gyro_Rate;
+float Current_Angle = 0.0f;
+float Loop_Time = 0.01f; // 10ms (100Hz)
+
+// --- [2. PID 제어 변수] ---
+// ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
+float Kp = 45.0f;   // 비례 항 (우선 이것만 사용)
+float Ki = 0.0f;    // 적분 항 (나중에)
+float Kd = 0.0f;    // 미분 항 (나중에)
+
+float Target_Angle = -0.55f; // 수직일 때 센서 오차값 (캘리브레이션 값)
+float Error, Prev_Error;
+float P_Term, I_Term, D_Term;
+float PID_Output;
+
+// --- [3. 모터 제어 변수] ---
+int Motor_PWM_L, Motor_PWM_R;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void Read_MPU6050(void);
+void Motor_Control(int speed_L, int speed_R);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -105,16 +123,20 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
-  printf("Motor & Encoder Test Start!\r\n");
 
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1); // PWM 시작
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+    printf("Balance Robot Start!\r\n");
 
-  HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL); // 엔코더 시작
-  HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
+    // 1. 통신 및 타이머 시작
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+    HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+    HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
 
-  __HAL_TIM_SET_COUNTER(&htim3, 30000); // 초기값 설정
-  __HAL_TIM_SET_COUNTER(&htim4, 30000);
+    // 2. MPU6050 깨우기 (Sleep Mode 해제)
+    uint8_t data = 0;
+    HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &data, 1, 100);
+    HAL_Delay(100);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -124,76 +146,51 @@ int main(void)
 
     /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
-	  // --- [1단계] 앞으로 가기 (2초) ---
-	    printf("Direction: FORWARD\r\n");
+  /* USER CODE BEGIN 3 */
+	uint32_t current_time;
+	uint32_t prev_time = 0;
 
-	    // 왼쪽 전진 (IN1=High, IN2=Low)
-	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_SET);
-	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
-	    // 오른쪽 전진 (IN1=High, IN2=Low)
-	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_SET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
+	while (1)
+	{
+	  current_time = HAL_GetTick();
 
-	    // 속도 30% (ARR이 4999이므로 약 1500)
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1500);
+	  // --- [10ms 주기 제어 루프 (100Hz)] ---
+	  if (current_time - prev_time >= 10)
+	  {
+		prev_time = current_time;
 
-	    HAL_Delay(2000); // 2초 주행
+		// 1. 센서 값 읽기 및 각도 계산 (상보필터)
+		Read_MPU6050();
 
-	    // --- [엔코더 값 확인] ---
-	    enc_L = __HAL_TIM_GET_COUNTER(&htim3);
-	    enc_R = __HAL_TIM_GET_COUNTER(&htim4);
-	    printf("Encoder L: %d | R: %d\r\n", enc_L, enc_R);
+		// 2. PID 계산
+		Error = Target_Angle - Current_Angle; // 목표 - 현재
 
-	    // --- [2단계] 정지 (1초) ---
-	    printf("Direction: STOP\r\n");
+		P_Term = Kp * Error;
+		I_Term += Ki * Error * Loop_Time;
+		D_Term = Kd * (Error - Prev_Error) / Loop_Time;
 
-	    // 정지 (모두 Low)
-	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
+		// I항 누적 제한 (Windup 방지 - 필요 시 활성화)
+		// if(I_Term > 500) I_Term = 500; if(I_Term < -500) I_Term = -500;
 
-	    // 속도 0
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
+		Prev_Error = Error;
 
-	    HAL_Delay(1000);
+		PID_Output = P_Term + I_Term + D_Term; // 최종 모터 출력값
 
-	    // --- [3단계] 뒤로 가기 (2초) ---
-	    printf("Direction: BACKWARD\r\n");
+		// 3. 모터 구동
+		// PID 출력이 양수면 앞으로(넘어지려는 쪽으로), 음수면 뒤로
+		// PWM 범위 제한 (-999 ~ 999)
+		if (PID_Output > 999) PID_Output = 999;
+		if (PID_Output < -999) PID_Output = -999;
 
-	    // 왼쪽 후진 (IN1=Low, IN2=High)
-	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_SET);
-	    // 오른쪽 후진 (IN1=Low, IN2=High)
-	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_SET);
+		// 모터 함수에 입력 (왼쪽, 오른쪽 동일하게 적용)
+		Motor_Control((int)PID_Output, (int)PID_Output);
 
-	    // 속도 30%
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 1500);
-
-	    HAL_Delay(2000);
-
-	    // --- [엔코더 값 확인] ---
-	    enc_L = __HAL_TIM_GET_COUNTER(&htim3);
-	    enc_R = __HAL_TIM_GET_COUNTER(&htim4);
-	    printf("Encoder L: %d | R: %d\r\n", enc_L, enc_R);
-
-	    // --- [4단계] 정지 (1초) ---
-	    HAL_GPIO_WritePin(GPIOC, L_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, L_IN2_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN1_Pin, GPIO_PIN_RESET);
-	    HAL_GPIO_WritePin(GPIOC, R_IN2_Pin, GPIO_PIN_RESET);
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
-	    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
-
-	    HAL_Delay(1000);
+		// 4. 디버깅 (필요할 때만 주석 해제 - 너무 빠르면 렉 걸림)
+		// printf("Angle: %.2f | PWM: %d\r\n", Current_Angle, (int)PID_Output);
 	  }
-
+	}
   /* USER CODE END 3 */
+  }
 }
 
 /**
@@ -243,7 +240,62 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void Read_MPU6050(void) {
+	uint8_t buffer[6]; // 데이터 읽기용 버퍼
 
+	// 가속도 읽기 (0x3D: ACCEL_YOUT_H 부터 Z까지) - Y, Z축 사용
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x3D, 1, buffer, 4, 100);
+	Acc_Y_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
+	Acc_Z_Raw = (int16_t)(buffer[2] << 8 | buffer[3]);
+
+	// 자이로 읽기 (0x43: GYRO_XOUT_H) - X축 회전 사용
+	HAL_I2C_Mem_Read(&hi2c1, MPU6050_ADDR, 0x43, 1, buffer, 2, 100);
+	Gyro_X_Raw = (int16_t)(buffer[0] << 8 | buffer[1]);
+
+	// 각도 계산 (상보필터)
+	// 1. 가속도 각도 (atan2)
+	Acc_Angle = atan2f((float)Acc_Y_Raw, (float)Acc_Z_Raw) * 57.296f;
+
+	// 2. 자이로 각속도
+	Gyro_Rate = Gyro_X_Raw / 131.0f;
+
+	// 3. 상보필터 적용 (0.96 : 0.04)
+	Current_Angle = 0.96f * (Current_Angle + Gyro_Rate * Loop_Time) + 0.04f * Acc_Angle;
+}
+
+void Motor_Control(int speed_L, int speed_R) {
+	// --- 왼쪽 모터 제어 ---
+	if (speed_L > 0) { // 전진
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // L_IN1
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // L_IN2
+	} else { // 후진
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+		speed_L = -speed_L; // PWM은 양수여야 함
+	}
+
+	// --- 오른쪽 모터 제어 ---
+	if (speed_R > 0) { // 전진
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);   // R_IN1
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET); // R_IN2
+	} else { // 후진
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET);
+		speed_R = -speed_R;
+	}
+
+	// 데드존(Deadzone) 보정: 모터가 돌기 시작하는 최소 전압 (약 100~200)
+	// 값이 너무 작으면 모터가 웅~ 소리만 내고 안 돕니다.
+	if (speed_L > 0 && speed_L < 150) speed_L = 150;
+	if (speed_R > 0 && speed_R < 150) speed_R = 150;
+
+	// 최대 속도 제한
+	if (speed_L > 999) speed_L = 999;
+	if (speed_R > 999) speed_R = 999;
+
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, speed_L);
+	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, speed_R);
+}
 /* USER CODE END 4 */
 
 /**
