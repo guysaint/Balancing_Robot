@@ -60,10 +60,10 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
 float Kp = 420.0f;   // 비례 항 - 힘
-float Ki = 1.5f;    // 누적 오차 보정 - 적분
-float Kd = 8.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Ki = 2.0f;    // 누적 오차 보정 - 적분
+float Kd = 20.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
-float Target_Angle = -0.55f; // 수직일 때 센서 오차값 (캘리브레이션 값)
+float Target_Angle = -0.28f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
 float P_Term, I_Term, D_Term;
 float PID_Output;
@@ -196,6 +196,13 @@ int main(void)
 
 			Motor_Control((int)PID_Output, (int)PID_Output);
 		}
+		// [디버깅용 코드 추가]
+		  // i 변수는 static으로 선언해서 값이 유지되게 함
+		  static int print_count = 0;
+		  if(print_count++ > 20) { // 200ms마다 한 번씩 출력
+			  printf("Angle: %.2f\r\n", Current_Angle);
+			  print_count = 0;
+		  }
 	  }
 	}
   /* USER CODE END 3 */
