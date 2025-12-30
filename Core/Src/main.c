@@ -60,9 +60,9 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 0.0f;   // 비례 항 - 힘
+float Kp = 200.0f;   // 비례 항 - 힘
 float Ki = 0.0f;    // 누적 오차 보정 - 적분
-float Kd = 0.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 15.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
 float Target_Angle = -1.3f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
@@ -136,7 +136,7 @@ int main(void)
     // 2. MPU6050 깨우기 (Sleep Mode 해제)
     uint8_t data = 0;
     HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &data, 1, 100);
-    HAL_Delay(100);
+    //HAL_Delay(100);
 
   /* USER CODE END 2 */
 
@@ -149,12 +149,12 @@ int main(void)
 
   /* USER CODE BEGIN 3 */
 	  // 데드존을 찾기 위해 pid관련 코드를 주석 처리 함
-	//uint32_t current_time;
-	//uint32_t prev_time = 0;
+	uint32_t current_time;
+	uint32_t prev_time = 0;
 
 	while (1)
 	{
-	  /* current_time = HAL_GetTick();
+	   current_time = HAL_GetTick();
 
 	  if (current_time - prev_time >= 10) // 10ms 주기 (100Hz)
 	  {
@@ -162,7 +162,7 @@ int main(void)
 
 		// 1. 센서 값 읽기
 		Read_MPU6050();
-
+/*
 		// ★ [안전장치 추가] 40도 이상 기울어지면 모터 끄기!
 		if (Current_Angle > 40.0f || Current_Angle < -40.0f)
 		{
@@ -205,8 +205,8 @@ int main(void)
 			//  printf("Angle: %.2f\r\n", Current_Angle);
 			//  print_count = 0;
 		 // }
-	  }*/
-	// ★★★★★ [데드존 찾기 테스트 코드] ★★★★★
+	  }
+	 ★★★★★ [데드존 찾기 테스트 코드] ★★★★★
 		  // 800 -> 1000 -> 1200 -> 1500 -> 1800 ...
 		  int test_pwm = 300;
 
@@ -214,7 +214,34 @@ int main(void)
 		  Motor_Control(test_pwm, test_pwm);
 
 		  HAL_Delay(100); // 너무 빠르지 않게 0.1초 대기
+	}*/
+	// ============================================
+	// [최후의 테스트] PID 다 버리고 직접 명령 내리기
+	// ============================================
+
+	float gap = 2.0f; // 2도 정도는 봐줌 (떨림 방지)
+	int force = 2500; // Period 5000 기준 절반 힘 (눈에 확 보임)
+
+	// 1. 앞으로 넘어질 때 (각도가 큼) -> 모터도 앞으로(정방향) 전력 질주!
+	if (Current_Angle > Target_Angle + gap)
+	{
+		// ★★★ 여기가 핵심입니다 ★★★
+		// 무조건 양수(+)를 줘서 앞으로 가게 만듭니다.
+		Motor_Control(force, force);
 	}
+	// 2. 뒤로 넘어질 때 (각도가 작음) -> 모터도 뒤로(역방향) 전력 질주!
+	else if (Current_Angle < Target_Angle - gap)
+	{
+		// 무조건 음수(-)를 줘서 뒤로 가게 만듭니다.
+		Motor_Control(-force, -force);
+	}
+	// 3. 서 있을 때
+	else
+	{
+		Motor_Control(0, 0);
+	}
+  }
+}
   /* USER CODE END 3 */
   }
 }
@@ -290,56 +317,55 @@ void Read_MPU6050(void) {
 }
 
 void Motor_Control(int speed_L, int speed_R) {
-    // ----------------------------------------
-    // [1] 방향 제어 (GPIO 설정)
-    // ----------------------------------------
+    // 1. 데드존 설정 (300에서 움직였으니, 여유 있게 350으로 설정)
+    // 이 값은 "바퀴를 굴리기 위한 최소 통행료"입니다.
+    int deadzone = 350;
 
-    // 왼쪽 모터 방향
-    if (speed_L >= 0) {
-        // 전진 (포트 설정은 사용자 환경에 맞게 유지)
+    // 2. 왼쪽 모터 제어
+    if (speed_L > 0) {
+        // 전진: 계산된 속도 + 데드존
+        speed_L = speed_L + deadzone;
+
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // IN1
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // IN2
-    } else {
-        // 후진
+    }
+    else if (speed_L < 0) {
+        // 후진: 절대값 변환 후 + 데드존
+        speed_L = abs(speed_L) + deadzone;
+
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
     }
+    else {
+        speed_L = 0; // 0이면 정지
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+    }
 
-    // 오른쪽 모터 방향
-    if (speed_R >= 0) {
-        // 전진
+    // 3. 오른쪽 모터 제어
+    if (speed_R > 0) {
+        speed_R = speed_R + deadzone;
+
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);   // IN1
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET); // IN2
-    } else {
-        // 후진
+    }
+    else if (speed_R < 0) {
+        speed_R = abs(speed_R) + deadzone;
+
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET);
     }
+    else {
+        speed_R = 0;
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET);
+    }
 
-    // ----------------------------------------
-    // [2] 속도값(PWM) 계산 (절대값 변환)
-    // ----------------------------------------
-    // 방향은 이미 정했으니, 이제 속도(크기)만 남깁니다.
-    speed_L = abs(speed_L);
-    speed_R = abs(speed_R);
+    // 4. 최대 속도 제한 (Period 4999 기준)
+    if (speed_L > 4999) speed_L = 4999;
+    if (speed_R > 4999) speed_R = 4999;
 
-    // ----------------------------------------
-    // [3] 데드존(Deadzone) 보정
-    // ----------------------------------------
-    // 모터가 0이 아니면, 최소 900의 힘은 줘야 바퀴가 구릅니다.
-    // (800에서 반응이 약했다면 900으로 올려보세요)
-    //if (speed_L > 0 && speed_L < 1100) speed_L = 1100;
-    //if (speed_R > 0 && speed_R < 1100) speed_R = 1100;
-
-    // ----------------------------------------
-    // [4] 최대 속도 제한
-    // ----------------------------------------
-    if (speed_L > 4700) speed_L = 4700;
-    if (speed_R > 4700) speed_R = 4700;
-
-    // ----------------------------------------
-    // [5] 최종 PWM 출력
-    // ----------------------------------------
+    // 5. PWM 출력
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, speed_L);
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, speed_R);
 }
