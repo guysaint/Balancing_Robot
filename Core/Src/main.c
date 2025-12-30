@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdlib.h>
 #define WHO_AM_I_REG 0x75
 /* USER CODE END Includes */
 
@@ -59,11 +60,11 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 380.0f;   // 비례 항 - 힘
-float Ki = 2.0f;    // 누적 오차 보정 - 적분
-float Kd = 28.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kp = 350.0f;   // 비례 항 - 힘
+float Ki = 0.0f;    // 누적 오차 보정 - 적분
+float Kd = 4.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
-float Target_Angle = -2.5f; // 수직일 때 센서 오차값 (캘리브레이션 값)
+float Target_Angle = -1.3f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
 float P_Term, I_Term, D_Term;
 float PID_Output;
@@ -198,16 +199,16 @@ int main(void)
 		}
 		// [디버깅용 코드 추가]
 		  // i 변수는 static으로 선언해서 값이 유지되게 함
-		  static int print_count = 0;
-		  if(print_count++ > 20) { // 200ms마다 한 번씩 출력
-			  printf("Angle: %.2f\r\n", Current_Angle);
-			  print_count = 0;
+		  //static int print_count = 0;
+		  //if(print_count++ > 20) { // 200ms마다 한 번씩 출력
+			//  printf("Angle: %.2f\r\n", Current_Angle);
+			//  print_count = 0;
 		  }
 	  }
 	}
   /* USER CODE END 3 */
   }
-}
+
 
 /**
   * @brief System Clock Configuration
@@ -280,37 +281,58 @@ void Read_MPU6050(void) {
 }
 
 void Motor_Control(int speed_L, int speed_R) {
-	// --- 왼쪽 모터 제어 ---
-	if (speed_L > 0) { // 전진
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // L_IN1
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // L_IN2
-	} else { // 후진
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-		speed_L = -speed_L; // PWM은 양수여야 함
-	}
+    // ----------------------------------------
+    // [1] 방향 제어 (GPIO 설정)
+    // ----------------------------------------
 
-	// --- 오른쪽 모터 제어 ---
-	if (speed_R > 0) { // 전진
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);   // R_IN1
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET); // R_IN2
-	} else { // 후진
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET);
-		speed_R = -speed_R;
-	}
+    // 왼쪽 모터 방향
+    if (speed_L >= 0) {
+        // 전진 (포트 설정은 사용자 환경에 맞게 유지)
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // IN1
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // IN2
+    } else {
+        // 후진
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+    }
 
-	// 데드존(Deadzone) 보정: 모터가 돌기 시작하는 최소 전압 (약 100~200)
-	// 값이 너무 작으면 모터가 웅~ 소리만 내고 안 돕니다.
-	if (speed_L > 0 && speed_L < 700) speed_L = 700;
-	if (speed_R > 0 && speed_R < 700) speed_R = 700;
+    // 오른쪽 모터 방향
+    if (speed_R >= 0) {
+        // 전진
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);   // IN1
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_RESET); // IN2
+    } else {
+        // 후진
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, GPIO_PIN_SET);
+    }
 
-	// 최대 속도 제한
-	if (speed_L > 4700) speed_L = 4700;
-	if (speed_R > 4700) speed_R = 4700;
+    // ----------------------------------------
+    // [2] 속도값(PWM) 계산 (절대값 변환)
+    // ----------------------------------------
+    // 방향은 이미 정했으니, 이제 속도(크기)만 남깁니다.
+    speed_L = abs(speed_L);
+    speed_R = abs(speed_R);
 
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, speed_L);
-	__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, speed_R);
+    // ----------------------------------------
+    // [3] 데드존(Deadzone) 보정
+    // ----------------------------------------
+    // 모터가 0이 아니면, 최소 900의 힘은 줘야 바퀴가 구릅니다.
+    // (800에서 반응이 약했다면 900으로 올려보세요)
+    if (speed_L > 0 && speed_L < 400) speed_L = 400;
+    if (speed_R > 0 && speed_R < 400) speed_R = 400;
+
+    // ----------------------------------------
+    // [4] 최대 속도 제한
+    // ----------------------------------------
+    if (speed_L > 4700) speed_L = 4700;
+    if (speed_R > 4700) speed_R = 4700;
+
+    // ----------------------------------------
+    // [5] 최종 PWM 출력
+    // ----------------------------------------
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, speed_L);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, speed_R);
 }
 /* USER CODE END 4 */
 
