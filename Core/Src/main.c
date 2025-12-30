@@ -60,11 +60,11 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 200.0f;   // 비례 항 - 힘
+float Kp = 100.0f;   // 비례 항 - 힘
 float Ki = 0.0f;    // 누적 오차 보정 - 적분
-float Kd = 15.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 1.5f;    // 급발진 방지(진동을 잡아줌) - 미분
 
-float Target_Angle = -1.3f; // 수직일 때 센서 오차값 (캘리브레이션 값)
+float Target_Angle = -2.0f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
 float P_Term, I_Term, D_Term;
 float PID_Output;
@@ -125,7 +125,7 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
-    printf("Balance Robot Start!\r\n");
+    // printf("Balance Robot Start!\r\n");
 
     // 1. 통신 및 타이머 시작
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
@@ -162,7 +162,7 @@ int main(void)
 
 		// 1. 센서 값 읽기
 		Read_MPU6050();
-/*
+
 		// ★ [안전장치 추가] 40도 이상 기울어지면 모터 끄기!
 		if (Current_Angle > 40.0f || Current_Angle < -40.0f)
 		{
@@ -190,7 +190,20 @@ int main(void)
 			Prev_Error = Error;
 
 			// 출력 계산 (부호 확인: 아까 반대로 바꾼 것 유지)
-			PID_Output = P_Term + I_Term + D_Term;
+			//PID_Output = (P_Term + I_Term + D_Term);
+			float PID_Total = P_Term + I_Term + D_Term;
+			float Min_PWM = 900.0f; // 모터가 '지잉-' 하고 겨우 굴러가는 힘
+
+			// PID 값에 따라 기초 체력을 '살짝' 얹어줍니다.
+			if (PID_Total > 0) {
+			    PID_Output = PID_Total + Min_PWM;
+			}
+			else if (PID_Total < 0) {
+			    PID_Output = PID_Total - Min_PWM;
+			}
+			else {
+			    PID_Output = 0;
+			}
 
 			// 3. 모터 제한 및 구동 (풀 파워 해제 버전)
 			if (PID_Output > 4700) PID_Output = 4700;
@@ -199,49 +212,24 @@ int main(void)
 			Motor_Control((int)PID_Output, (int)PID_Output);
 		}
 		// [디버깅용 코드 추가]
-		  // i 변수는 static으로 선언해서 값이 유지되게 함
-		  //static int print_count = 0;
-		  //if(print_count++ > 20) { // 200ms마다 한 번씩 출력
-			//  printf("Angle: %.2f\r\n", Current_Angle);
-			//  print_count = 0;
+		   //i 변수는 static으로 선언해서 값이 유지되게 함
+		//  static int print_count = 0;
+		 // if(print_count++ > 20) { // 200ms마다 한 번씩 출력
+		//	  printf("Angle: %.2f\r\n", Current_Angle);
+		//	  print_count = 0;
 		 // }
 	  }
-	 ★★★★★ [데드존 찾기 테스트 코드] ★★★★★
+	/* ★★★★★ [데드존 찾기 테스트 코드] ★★★★★
 		  // 800 -> 1000 -> 1200 -> 1500 -> 1800 ...
 		  int test_pwm = 300;
 
 		  // 강제로 모터를 앞으로 돌림.
 		  Motor_Control(test_pwm, test_pwm);
 
-		  HAL_Delay(100); // 너무 빠르지 않게 0.1초 대기
-	}*/
-	// ============================================
-	// [최후의 테스트] PID 다 버리고 직접 명령 내리기
-	// ============================================
+		  HAL_Delay(100); // 너무 빠르지 않게 0.1초 대기 */
+	}
 
-	float gap = 2.0f; // 2도 정도는 봐줌 (떨림 방지)
-	int force = 2500; // Period 5000 기준 절반 힘 (눈에 확 보임)
 
-	// 1. 앞으로 넘어질 때 (각도가 큼) -> 모터도 앞으로(정방향) 전력 질주!
-	if (Current_Angle > Target_Angle + gap)
-	{
-		// ★★★ 여기가 핵심입니다 ★★★
-		// 무조건 양수(+)를 줘서 앞으로 가게 만듭니다.
-		Motor_Control(force, force);
-	}
-	// 2. 뒤로 넘어질 때 (각도가 작음) -> 모터도 뒤로(역방향) 전력 질주!
-	else if (Current_Angle < Target_Angle - gap)
-	{
-		// 무조건 음수(-)를 줘서 뒤로 가게 만듭니다.
-		Motor_Control(-force, -force);
-	}
-	// 3. 서 있을 때
-	else
-	{
-		Motor_Control(0, 0);
-	}
-  }
-}
   /* USER CODE END 3 */
   }
 }
@@ -310,7 +298,7 @@ void Read_MPU6050(void) {
 	Acc_Angle = atan2f((float)Acc_X_Raw, (float)Acc_Z_Raw) * 57.296f;
 
 	// 2. 자이로 각속도
-	Gyro_Rate = Gyro_Y_Raw / 131.0f;
+	Gyro_Rate = -Gyro_Y_Raw / 131.0f;
 
 	// 3. 상보필터 적용 (0.96 : 0.04)
 	Current_Angle = 0.96f * (Current_Angle + Gyro_Rate * Loop_Time) + 0.04f * Acc_Angle;
@@ -319,15 +307,15 @@ void Read_MPU6050(void) {
 void Motor_Control(int speed_L, int speed_R) {
     // 1. 데드존 설정 (300에서 움직였으니, 여유 있게 350으로 설정)
     // 이 값은 "바퀴를 굴리기 위한 최소 통행료"입니다.
-    int deadzone = 350;
+    int deadzone = 750;
 
     // 2. 왼쪽 모터 제어
     if (speed_L > 0) {
         // 전진: 계산된 속도 + 데드존
         speed_L = speed_L + deadzone;
 
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // IN1
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // IN2
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);   // SET -> RESET
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET); // RESET -> SET
     }
     else if (speed_L < 0) {
         // 후진: 절대값 변환 후 + 데드존
