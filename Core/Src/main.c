@@ -148,12 +148,13 @@ int main(void)
     /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-	uint32_t current_time;
-	uint32_t prev_time = 0;
+	  // 데드존을 찾기 위해 pid관련 코드를 주석 처리 함
+	//uint32_t current_time;
+	//uint32_t prev_time = 0;
 
 	while (1)
 	{
-	  current_time = HAL_GetTick();
+	  /* current_time = HAL_GetTick();
 
 	  if (current_time - prev_time >= 10) // 10ms 주기 (100Hz)
 	  {
@@ -204,7 +205,15 @@ int main(void)
 			//  printf("Angle: %.2f\r\n", Current_Angle);
 			//  print_count = 0;
 		 // }
-	  }
+	  }*/
+	// ★★★★★ [데드존 찾기 테스트 코드] ★★★★★
+		  // 800 -> 1000 -> 1200 -> 1500 -> 1800 ...
+		  int test_pwm = 300;
+
+		  // 강제로 모터를 앞으로 돌림.
+		  Motor_Control(test_pwm, test_pwm);
+
+		  HAL_Delay(100); // 너무 빠르지 않게 0.1초 대기
 	}
   /* USER CODE END 3 */
   }
@@ -319,8 +328,8 @@ void Motor_Control(int speed_L, int speed_R) {
     // ----------------------------------------
     // 모터가 0이 아니면, 최소 900의 힘은 줘야 바퀴가 구릅니다.
     // (800에서 반응이 약했다면 900으로 올려보세요)
-    if (speed_L > 0 && speed_L < 900) speed_L = 900;
-    if (speed_R > 0 && speed_R < 900) speed_R = 900;
+    //if (speed_L > 0 && speed_L < 1100) speed_L = 1100;
+    //if (speed_R > 0 && speed_R < 1100) speed_R = 1100;
 
     // ----------------------------------------
     // [4] 최대 속도 제한
