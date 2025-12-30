@@ -60,9 +60,9 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 100.0f;   // 비례 항 - 힘
+float Kp = 380.0f;   // 비례 항 - 힘
 float Ki = 0.0f;    // 누적 오차 보정 - 적분
-float Kd = 1.5f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 12.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
 float Target_Angle = -2.0f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
@@ -136,6 +136,10 @@ int main(void)
     // 2. MPU6050 깨우기 (Sleep Mode 해제)
     uint8_t data = 0;
     HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &data, 1, 100);
+
+    //0x1A 레지스터에 0x03을 써서 약 42Hz 이상의 진동 노이즈를 걸러냄.
+    uint8_t dlpf_cfg = 0x03;
+    HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x1A, 1, &dlpf_cfg, 1, 100);
     //HAL_Delay(100);
 
   /* USER CODE END 2 */
@@ -190,8 +194,8 @@ int main(void)
 			Prev_Error = Error;
 
 			// 출력 계산 (부호 확인: 아까 반대로 바꾼 것 유지)
-			//PID_Output = (P_Term + I_Term + D_Term);
-			float PID_Total = P_Term + I_Term + D_Term;
+			PID_Output = (P_Term + I_Term + D_Term);
+			/*float PID_Total = P_Term + I_Term + D_Term;
 			float Min_PWM = 900.0f; // 모터가 '지잉-' 하고 겨우 굴러가는 힘
 
 			// PID 값에 따라 기초 체력을 '살짝' 얹어줍니다.
@@ -203,7 +207,7 @@ int main(void)
 			}
 			else {
 			    PID_Output = 0;
-			}
+			}*/
 
 			// 3. 모터 제한 및 구동 (풀 파워 해제 버전)
 			if (PID_Output > 4700) PID_Output = 4700;
