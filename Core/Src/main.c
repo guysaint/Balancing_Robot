@@ -60,9 +60,9 @@ float Loop_Time = 0.01f; // 10ms (100Hz)
 
 // --- [2. PID 제어 변수] ---
 // ★ 튜닝할 때 여기 숫자만 바꾸면 됩니다!
-float Kp = 350.0f;   // 비례 항 - 힘
+float Kp = 0.0f;   // 비례 항 - 힘
 float Ki = 0.0f;    // 누적 오차 보정 - 적분
-float Kd = 4.0f;    // 급발진 방지(진동을 잡아줌) - 미분
+float Kd = 0.0f;    // 급발진 방지(진동을 잡아줌) - 미분
 
 float Target_Angle = -1.3f; // 수직일 때 센서 오차값 (캘리브레이션 값)
 float Error, Prev_Error;
@@ -203,12 +203,12 @@ int main(void)
 		  //if(print_count++ > 20) { // 200ms마다 한 번씩 출력
 			//  printf("Angle: %.2f\r\n", Current_Angle);
 			//  print_count = 0;
-		  }
+		 // }
 	  }
 	}
   /* USER CODE END 3 */
   }
-
+}
 
 /**
   * @brief System Clock Configuration
@@ -319,8 +319,8 @@ void Motor_Control(int speed_L, int speed_R) {
     // ----------------------------------------
     // 모터가 0이 아니면, 최소 900의 힘은 줘야 바퀴가 구릅니다.
     // (800에서 반응이 약했다면 900으로 올려보세요)
-    if (speed_L > 0 && speed_L < 400) speed_L = 400;
-    if (speed_R > 0 && speed_R < 400) speed_R = 400;
+    if (speed_L > 0 && speed_L < 900) speed_L = 900;
+    if (speed_R > 0 && speed_R < 900) speed_R = 900;
 
     // ----------------------------------------
     // [4] 최대 속도 제한
